@@ -1,0 +1,17 @@
+{
+    "route": {
+        "prefix": "fb00::3/128",
+        "ifname": "veth3",
+        "gateway": "fe80::32",
+        "frr-segs": ["fb00::4"]
+    },
+
+    "bfd": {
+        "bindaddr": "fb00::2",
+        "port": 10000,
+        "segments": ["fb00::3"],
+        "session": 1,
+        "threshold": 3,
+        "interval": 1000000
+    }
+}
