@@ -69,7 +69,7 @@ def start_bfd_daemon(conf):
     os.execve(daemon_path, args, {})
 
 if len(sys.argv) != 2:
-    print("Format: ./frr-master.py CONFIG-FILE")
+    print("Format: ./frr.py CONFIG-FILE")
     sys.exit(1)
 
 config_file = open(sys.argv[1])

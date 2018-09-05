@@ -70,6 +70,7 @@ struct daemon_state {
 	__u16 ack;
 } state;
 
+pthread_mutex_t lock;
 int bpf_map_fd;
 
 int bpf(int cmd, union bpf_attr *attr, unsigned int size)
@@ -199,23 +200,26 @@ void *sender(void *ptr)
 
 	char buf[] = "SRv6 BFD";
 	while (state.sending) {
-		// TODO mutex here
+		pthread_mutex_lock(&lock);
 		if (state.link_up) {
 			state.seq++;
 
 			if ((state.seq > state.ack && state.seq - state.ack > state.threshold) ||
 			    (state.seq < state.ack && 65536 - state.ack + state.seq > state.threshold)) {
+				printf("killing with %d %d\n", state.seq, state.ack);
 				state.seq = 0;
 				state.ack = 0;
 				update_link_state(false);
 			}
 
+			printf("sending %d\n", state.seq);
 			tlv->seq = htons(state.seq);
 			tlv->ack = htons(state.ack);
 		} else {
 			tlv->seq = 0;
 			tlv->ack = 0;
 		}
+		pthread_mutex_unlock(&lock);
 
 		err = setsockopt(fd, IPPROTO_IPV6, IPV6_RTHDR, srh, (socklen_t) srh_len);
 		if (err < 0)
@@ -257,8 +261,9 @@ void parse_srh(struct ipv6_sr_hdr *srh)
 
 	__u16 seq = ntohs(tlv->seq);
 	__u16 ack = ntohs(tlv->ack);
+	printf("received %d / %d\n", seq, ack);
 
-	// TODO mutex
+	pthread_mutex_lock(&lock);
 	if (!state.link_up && seq == 0 && ack == 0) {
 		update_link_state(true);
 	} else if ((state.seq > state.ack && seq > state.ack && seq <= state.seq) ||
@@ -267,6 +272,7 @@ void parse_srh(struct ipv6_sr_hdr *srh)
 		state.ack = seq;
 		printf("SEQ %d, ACK %d\n", state.seq, state.ack);
 	}
+	pthread_mutex_unlock(&lock);
 
 	// TODO interval
 
@@ -335,7 +341,7 @@ int main(int ac, char **av)
 		goto usage;
 
 	state.snd_interval.tv_sec = interval / 1000000;
-	state.snd_interval.tv_nsec = interval % 1000000;
+	state.snd_interval.tv_nsec = (interval % 1000000) * 1000;
 
 	bpf_map_fd = bpf_get_map(av[6]);
 	if (bpf_map_fd < 0)
@@ -354,6 +360,12 @@ int main(int ac, char **av)
 	}
 
 	/* ---- */
+
+	if (pthread_mutex_init(&lock, NULL)) {
+		perror("pthread_mutex_init");
+		free(state.segments);
+		return -1;
+	}
 
 	int err;
 	struct sockaddr_in6 sin6;
@@ -394,7 +406,10 @@ int main(int ac, char **av)
 	pthread_t th_sender;
 
 	state.sending = 1;
-	pthread_create(&th_sender, NULL, sender, (void *)&fd);
+	if (pthread_create(&th_sender, NULL, sender, (void *)&fd)) {
+		perror("pthread_create");
+		goto out;
+	}
 	receiver(bind_fd);
 
 	state.sending = 0;
@@ -411,6 +426,7 @@ out:
 		pthread_join(th_sender, NULL);
 	}
 
+	pthread_mutex_destroy(&lock);
 	free(state.segments);
 	close(fd);
 	close(bind_fd);
