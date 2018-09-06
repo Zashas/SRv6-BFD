@@ -14,6 +14,9 @@
 #include <linux/bpf.h>
 #include <asm/unistd.h>
 
+#define DEBUG 1
+#define SR6_TLV_BFD 142
+
 #ifndef __u8
 #define __u8 uint8_t
 #define __u16 uint16_t
@@ -21,8 +24,6 @@
 #define __be32 uint32_t
 #define __u64 uint64_t
 #endif
-
-#define SR6_TLV_BFD 142
 
 struct sr6_tlv {
 	__u8 type;
@@ -72,6 +73,9 @@ struct daemon_state {
 
 pthread_mutex_t lock;
 int bpf_map_fd;
+
+#define debug_print(fmt, ...) \
+            do { if (DEBUG) fprintf(stderr, fmt, __VA_ARGS__); } while (0)
 
 int bpf(int cmd, union bpf_attr *attr, unsigned int size)
 {
@@ -192,12 +196,6 @@ void *sender(void *ptr)
 	if (err < 0)
 		goto clean;
 
-
-	/*for (int i=0; i < srh_len; i++)
-		printf("%02x ", *((char*) (void*)srh + i));
-	    printf("\n");
-	    printf("Header total length : %u bytes\n", srh_len);*/
-
 	char buf[] = "SRv6 BFD";
 	while (state.sending) {
 		pthread_mutex_lock(&lock);
@@ -206,13 +204,13 @@ void *sender(void *ptr)
 
 			if ((state.seq > state.ack && state.seq - state.ack > state.threshold) ||
 			    (state.seq < state.ack && 65536 - state.ack + state.seq > state.threshold)) {
-				printf("killing with %d %d\n", state.seq, state.ack);
+				debug_print("Threshold limit reached: SEQ=%d ACK=%d\n", state.seq, state.ack);
 				state.seq = 0;
 				state.ack = 0;
 				update_link_state(false);
 			}
 
-			printf("sending %d\n", state.seq);
+			debug_print("Sending probe with SEQ=%d\n", state.seq);
 			tlv->seq = htons(state.seq);
 			tlv->ack = htons(state.ack);
 		} else {
@@ -225,9 +223,9 @@ void *sender(void *ptr)
 		if (err < 0)
 			goto clean;
 
-		err = send(fd, buf, sizeof(buf), 0);
-		if (err < 0)
-			goto clean;
+		send(fd, buf, sizeof(buf), 0);
+		// TODO: we're not checking against any sending errors at the
+		// moment, but a logging function should be inserted here
 
 		nanosleep(&state.snd_interval, NULL);
 	}
@@ -261,7 +259,7 @@ void parse_srh(struct ipv6_sr_hdr *srh)
 
 	__u16 seq = ntohs(tlv->seq);
 	__u16 ack = ntohs(tlv->ack);
-	printf("received %d / %d\n", seq, ack);
+	debug_print("Received probe SEQ=%d ACK=%d\n", seq, ack);
 
 	pthread_mutex_lock(&lock);
 	if (!state.link_up && seq == 0 && ack == 0) {
@@ -270,12 +268,10 @@ void parse_srh(struct ipv6_sr_hdr *srh)
 		   (state.seq < state.ack && (seq >= 0 && seq <= state.seq || seq > state.ack))) 
 	{
 		state.ack = seq;
-		printf("SEQ %d, ACK %d\n", state.seq, state.ack);
 	}
 	pthread_mutex_unlock(&lock);
 
-	// TODO interval
-
+	// TODO interval management
 }
 
 int receiver(int fd)
@@ -283,6 +279,13 @@ int receiver(int fd)
 	char buffer[548];
 	char srh_buffer[100];
 	struct sockaddr_in6 src_addr;
+
+	struct timeval tv;
+	tv.tv_sec = state.snd_interval.tv_sec * state.threshold * 2;
+	tv.tv_usec = 0;
+	// helps to avoid a deadlock when the sender stopped and no further
+	// packet is received
+	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
 
 	struct iovec iov[1];
 	iov[0].iov_base = buffer;
@@ -296,14 +299,17 @@ int receiver(int fd)
 	message.msg_control = srh_buffer;
 	message.msg_controllen = sizeof(srh_buffer);
 
-	while (1) {
+	while (state.sending) {
 		struct ipv6_sr_hdr *srh = NULL;
 		ssize_t count = recvmsg(fd, &message, 0);
 
 		if (count == -1) {
-		    return errno;
+			if (errno == 11) // EAGAIN might be raised by SO_RCVTIMEO
+				continue;
+
+			perror("recvmsg failed");
 		} else if (message.msg_flags&MSG_TRUNC) {
-		    printf("datagram too large for buffer: truncated\n");
+			printf("datagram too large for buffer: truncated\n");
 		} else {
 			// Ensure message has been sent by our sending socket
 			if (memcmp(&src_addr.sin6_addr, &state.bindaddr, sizeof(struct in6_addr)))

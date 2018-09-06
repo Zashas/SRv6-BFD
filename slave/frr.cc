@@ -52,7 +52,7 @@ int frr(struct __sk_buff *skb) {{
     if (!entry)
         return BPF_DROP;
 
-    if (bpf_ktime_get_ns() <= entry->timestamp + {threshold})
+    if (entry->timestamp != 0 && bpf_ktime_get_ns() <= entry->timestamp + {threshold})
         return BPF_OK;
 
     char srh[] = {{ 0, {hdrlen}, 4, {nseg},
@@ -65,6 +65,7 @@ int frr(struct __sk_buff *skb) {{
             bpf_trace_printk("SRv6 FRR: incorrect SRH\\n");
             return BPF_DROP;
     }}
+
     return BPF_OK;
 }}
 )";
@@ -88,7 +89,7 @@ std::string build_prog(char *argv[], uint64_t threshold_ns)
     unsigned char *buf = (unsigned char *)malloc(buf_len);
     CHECK(buf == NULL, "malloc");
     for(int i=0; i < frr_segs.size(); i++) {
-        int ret = inet_pton(AF_INET6, frr_segs[i].c_str(), buf + sizeof(struct in6_addr)*i);
+        int ret = inet_pton(AF_INET6, frr_segs[frr_segs.size() - i - 1].c_str(), buf + sizeof(struct in6_addr)*i);
         CHECK(ret == 0, "Invalid segment given in FRR-SEGS");
     }
 
@@ -136,17 +137,18 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    uint32_t entry_id, threshold;
+    uint32_t entry_id;
+    uint64_t threshold;
     try {
         entry_id = std::stoi(argv[5]);
-        threshold = std::stoi(argv[7]);
+        threshold = (uint64_t) std::stoll(argv[7]);
         CHECK(entry_id < 0, "TIMER-ID should be positive");
         CHECK(threshold < 0, "THRESHOLD should be positive");
     } catch (std::exception const &e) {
         CHECK(1, "TIMER-ID and THRESHOLD must be valid integers");
     }
 
-    std::string bpf_prog = build_prog(argv, (uint64_t)threshold * 1000);
+    std::string bpf_prog = build_prog(argv, threshold * 1000); // from microsec to nanosec
     std::cout << bpf_prog << std::endl;
 
     int map_timers_fd = bpf_obj_get("/sys/fs/bpf/ip/globals/sr6_bfd_timers");

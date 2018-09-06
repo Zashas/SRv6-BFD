@@ -62,9 +62,11 @@ ip netns exec ns5 ip link set dev lo up
 ip netns exec ns2 sysctl net.ipv6.conf.all.forwarding=1
 ip netns exec ns2 sysctl net.ipv6.conf.veth2.forwarding=1
 ip netns exec ns2 sysctl net.ipv6.conf.veth3.forwarding=1
+ip netns exec ns2 sysctl net.ipv6.conf.veth5.forwarding=1
 ip netns exec ns2 sysctl net.ipv6.conf.all.seg6_enabled=1
 ip netns exec ns2 sysctl net.ipv6.conf.veth2.seg6_enabled=1
 ip netns exec ns2 sysctl net.ipv6.conf.veth3.seg6_enabled=1
+ip netns exec ns2 sysctl net.ipv6.conf.veth5.seg6_enabled=1
 
 ip netns exec ns3 sysctl net.ipv6.conf.all.forwarding=1
 ip netns exec ns3 sysctl net.ipv6.conf.veth4.forwarding=1
@@ -108,11 +110,11 @@ ip netns exec ns3 ip -6 addr add fb00::3:0 dev lo
 ip netns exec ns4 ip -6 addr add fb00::4:0 dev lo
 ip netns exec ns5 ip -6 addr add fb00::5:0 dev lo
 
-ip netns exec ns3 bash -c "ip -6 route add fb00::3:100 encap seg6local \
-    action End.BPF endpoint obj slave/sr6_bfd.o sec sr6_bfd dev veth4 && \
-    slave/frr fb00::/16 fe80::23 veth4 fb00::4:0,fb00::2:0 1 fb00::2:0,fb00::3:100,fb00::2:0 3"
+simulation/netns.py ns3 ip -6 route add fb00::3:100 encap seg6local action End.BPF endpoint obj slave/sr6_bfd.o sec sr6_bfd dev veth4
+simulation/netns.py ns3 slave/frr fb00::1:0/112 fe80::23 veth4 fb00::4:0,fb00::2:0 1 fb00::2:0,fb00::3:100,fb00::2:0 3000000
 
-ip netns exec ns1 ip sr tunsrc set fb00::1:0
+ip netns exec ns2 ip sr tunsrc set fb00::2:0
+ip netns exec ns3 ip sr tunsrc set fb00::3:0
 
 ip netns exec ns1 ip -6 route add fb00::/16 via fe80::21 dev veth1
 ip netns exec ns2 ip -6 route add fb00::1:0/112 via fe80::12 dev veth2
@@ -126,7 +128,6 @@ ip netns exec ns4 ip -6 route add fb00::3:0/112 via fe80::34 dev veth7
 ip netns exec ns5 ip -6 route add fb00::/16 via fe80::35 dev veth10
 
 #ip netns exec ns3 ping -I fb00::3:0 fb00::5:0
-#ip netns exec ns2 tcpdump -i veth3 -w trace.pcap &
-ip netns exec ns2 bash -c "mount -t bpf none /sys/fs/bpf && master/frr.py config-master.json"
+ip netns exec ns2 bash -c "mount -t bpf none /sys/fs/bpf && master/frr.py simulation/config-master.json"
 
 exit 1

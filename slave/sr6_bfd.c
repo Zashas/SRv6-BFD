@@ -98,7 +98,6 @@ int sr6_bfd_fn(struct __sk_buff *skb)
 	if (!entry_id)
 		return BPF_OK; // [src, segments] does not match an installed FRR policy
 
-	printt("entry id found\n");
 	struct bfd_entry *entry = map_lookup_elem(&sr6_bfd_timers, entry_id);
 	if (!entry) {
 		printt("[SRv6 BFD] Error: entry %d supposed to exist but not found\n", *entry_id);
@@ -109,6 +108,7 @@ int sr6_bfd_fn(struct __sk_buff *skb)
 		entry->seq = 0;
 		entry->ack = 65535;
 		entry->timestamp = 0; // session has been reset by master
+		printt("[SRv6 BFD] Session reset by master\n");
 	} else if (!(entry->seq >= entry->ack && ntohs(tlv.ack) > entry->ack) &&
 		 !(entry->seq < entry->ack && (ntohs(tlv.ack) > entry->ack || ntohs(tlv.ack) <= entry->seq)) ) {
 		return BPF_DROP; // invalid seq/ack pair
@@ -119,7 +119,6 @@ int sr6_bfd_fn(struct __sk_buff *skb)
 	}
 
 	map_update_elem(&sr6_bfd_timers, entry_id, entry, BPF_EXIST);
-	printt("Updated !\n");
         return BPF_OK;
 }
 
