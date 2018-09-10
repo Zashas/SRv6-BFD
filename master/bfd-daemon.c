@@ -14,7 +14,7 @@
 #include <linux/bpf.h>
 #include <asm/unistd.h>
 
-#define DEBUG 1
+#define DEBUG 0
 #define SR6_TLV_BFD 142
 
 #ifndef __u8

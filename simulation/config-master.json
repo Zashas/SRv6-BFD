@@ -3,7 +3,7 @@
         "prefix": "fb00::5:0/112",
         "ifname": "veth3",
         "gateway": "fe80::32",
-        "frr-segs": ["fb00::3:0", "fb00::4:0"]
+        "frr-segs": ["fb00::4:0", "fb00::3:0"]
     },
 
     "bfd": {
@@ -12,6 +12,6 @@
         "segments": ["fb00::3:100"],
         "session": 1,
         "threshold": 3,
-        "interval": 1000000
+        "interval": 1000
     }
 }

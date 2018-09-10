@@ -1,13 +1,3 @@
-/*
- * UseExternalMap shows how to access an external map through
- * C++ interface. The external map could be a pinned map.
- * This example simulates the pinned map through a locally
- * created map by calling libbpf bpf_create_map.
- *
- * Copyright (c) Facebook, Inc.
- * Licensed under the Apache License, Version 2.0 (the "License")
- */
-
 #include <stdint.h>
 #include <iostream>
 #include <sstream>

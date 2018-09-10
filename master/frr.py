@@ -37,6 +37,7 @@ def prepare_pin(dst):
     return path
 
 def install_route(dst, ifname, gw, lfa_segs):
+    lfa_segs = lfa_segs[::-1] # inverse list to match the SRH segments order
     segs = map(lambda x: socket.inet_pton(socket.AF_INET6, x), lfa_segs)
     segs = functools.reduce(lambda x,y: x+y, segs)
     segs = ', '.join(map(str, list(segs)))
